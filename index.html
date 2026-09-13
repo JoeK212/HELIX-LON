@@ -319,8 +319,7 @@ function makeLabelSprite(text, color){
 }
 // For full sentences (the unroll comparison captions), not the 1-4 character
 // tick labels makeLabelSprite() above is sized for — that function's 128x64
-// canvas at 36px font clips anything longer than a couple characters, which
-// is exactly what happened to the comparison bar's caption on first pass.
+// canvas at 36px font clips anything longer than a couple characters.
 function makeWideLabelSprite(text, color, worldWidth){
   const cnv = document.createElement("canvas");
   cnv.width = 1024; cnv.height = 128;
@@ -576,18 +575,15 @@ function renderMiniRuler(){
       entries.push({ x, text: String(row.format ? row.format(v) : (v>=1000 ? Math.round(v/1000)+"k" : v)) });
     });
     // Second pass: draw labels left to right, in real screen order.
-    // Two regressions this guards against:
-    // (1) edge clipping — text-anchor="middle" centers a label ON its tick,
-    //     so a tick at x=0 or x=1000 (always true for the first/last tick of
-    //     every row) rendered half its glyph outside the SVG's own viewBox,
-    //     which clips by default. Ticks within ~9 monospace characters of
-    //     either edge anchor from that edge instead of their center.
-    // (2) label crowding — scales that compress hard near one end (S, T, LL
-    //     all do, since they're built on sin/tan/log-log rather than a plain
-    //     log) can pack several nice-values within a few px of each other.
-    //     A monospace-width estimate (13 viewBox units/char at font-size 22)
-    //     is used to skip drawing (not the tick, just the label) any entry
-    //     that would overlap the previously-drawn label in this row.
+    // - Edge ticks (always at x=0/x=1000, the first/last of every row):
+    //   text-anchor="middle" would center the label on the tick, clipping
+    //   half the glyph past the SVG's own viewBox. Anchor from the edge
+    //   instead when a label would cross it.
+    // - Crowded labels: scales that compress hard near one end (S, T, LL —
+    //   built on sin/tan/log-log rather than a plain log) can pack several
+    //   nice-values within a few px of each other. A monospace-width
+    //   estimate (16 viewBox units/char at font-size 22) skips drawing a
+    //   label (tick stays) if it would overlap the previous one in this row.
     const CHAR_W = 16, MIN_GAP = 10;
     entries.sort((a,b)=>a.x-b.x);
     let lastLabelRight = -Infinity;
@@ -901,19 +897,16 @@ document.getElementById("themeBtn").addEventListener("click", ()=>{
 });
 
 /* ---------------- unroll: proves the length claim instead of asserting it ----------------
-   The header used to say "4 turns ≈ 4× the effective length" — a guess based on
-   turn count alone, ignoring the radius. The real relationship for a helix of
-   radius R, N turns, height H is arc length = sqrt((2πRN)² + H²), which is NOT
-   simply proportional to N. Computed exactly, D's actual arc length is closer to
-   9.5× HEIGHT than 4× — this constant is now the one source of truth for that
-   number everywhere it's stated, so it can't drift out of sync with the geometry
-   again. This section also builds the "Unroll" toggle: animates D from its coiled
-   helix into a straight line of that exact computed length, with a short
-   reference bar (length HEIGHT) alongside for direct visual comparison — the
-   thing a one-line claim in the header could never really convey.
-   Only D unrolls (not the other seven scales) — one scale is enough to make the
-   point, and C's slide-offset interaction doesn't have a meaningful analog in
-   the unrolled state, so leaving it coiled avoids a half-explained edge case. */
+   For a helix of radius R, N turns, height H, arc length = sqrt((2πRN)² + H²) —
+   NOT simply proportional to N. Computed exactly, D's actual arc length is
+   ~9.5× HEIGHT; this constant is the one source of truth for that number
+   everywhere it's stated. This section builds the "Unroll" toggle: animates D
+   from its coiled helix into a straight line of that exact computed length,
+   with a short reference bar (length HEIGHT) alongside for direct visual
+   comparison. Only D unrolls (not the other seven scales) — one scale is
+   enough to make the point, and C's slide-offset interaction doesn't have a
+   meaningful analog in the unrolled state, so leaving it coiled avoids a
+   half-explained edge case. */
 let D_ARC_LENGTH = Math.sqrt(Math.pow(2*Math.PI*N_TURNS*RADII.d, 2) + HEIGHT*HEIGHT);
 let LENGTH_RATIO = D_ARC_LENGTH / HEIGHT;
 
@@ -926,9 +919,10 @@ function morphedDPoint(t, u){
 function rebuildDGeometry(u, steps){
   // steps defaults to 200 — fewer than the 900 used elsewhere, since this
   // rebuilds every animation frame during the unroll/coil tween and a thin
-  // tube doesn't need full resolution to read cleanly mid-motion. Pass 900
-  // explicitly for the settled (non-animating) state — see the regression
-  // note below for why that distinction matters.
+  // tube doesn't need full resolution to read cleanly mid-motion. Every
+  // settled-state call site must pass 900 explicitly instead — silently
+  // falling back to 200 for D's resting state (not just mid-tween) drops
+  // its geometry to well below every other scale's resolution.
   steps = steps || 200;
   const pts = [];
   for (let i=0;i<=steps;i++) pts.push(morphedDPoint(i/steps, u));
@@ -1060,18 +1054,9 @@ function rebuildAllScales(){
   // body is a function precisely so this stays correct after a turns change
   if (stepIndex === STEPS.length-1) renderStep();
   // D's on-screen geometry (coiled or straight, whichever is currently
-  // showing) needs to reflect the new turn count / arc length too.
-  // REGRESSION, caught by an STL export triangle-count mismatch, not by
-  // eye: this used to call rebuildDGeometry(u) with its default low
-  // resolution (200 segments, meant for per-frame animation smoothness
-  // during the tween) to refresh D's RESTING state after a turns change —
-  // silently downgrading D from the 900-segment quality every other scale
-  // gets, every single time turns changed, with no visual sign obvious
-  // enough to notice by eye (a coiled tube at 200 vs 900 segments looks
-  // almost identical at this size) but a very real 4.5x triangle-count
-  // drop (14,400 to 3,200) confirmed directly on D's live geometry. Fixed
-  // by passing 900 explicitly for this settled-state call — only the
-  // active tween itself should use the cheaper 200-segment resolution.
+  // showing) needs to reflect the new turn count / arc length too. Pass 900
+  // explicitly — this is a settled-state refresh, not the tween, which is
+  // the only caller allowed to use the cheaper 200-segment default.
   rebuildDGeometry(isUnrolled ? 1 : 0, 900);
 }
 
