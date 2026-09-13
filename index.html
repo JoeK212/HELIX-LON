@@ -1,0 +1,1421 @@
+<!DOCTYPE html>
+<!--
+  HELIX-LON
+  A 3D reimagining of the Deci-Lon — the C/D/A/K log scales wrapped helically
+  around a shared axis instead of drawn straight, so N turns buys N times the
+  effective scale length (and precision) of a straight rule in the same
+  footprint. Same underlying math as the flat DECI-LON tool throughout —
+  height replaces horizontal position, and cylinder rotation is a free
+  cosmetic "screw" twist, since rotating around the shared axis can't change
+  a point's height and therefore can't affect any reading.
+  Joe.K · axisbim.io
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="description" content="A 3D concept sketch of a helical slide rule — the Deci-Lon's C/D/A/K scales wrapped around a cylinder for far more effective scale length than a straight rule.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Helix-Lon">
+<meta name="theme-color" content="#17140F" id="themeColorMeta">
+<title>Helix-Lon — a helical slide rule</title>
+<style>
+  :root{
+    --paper:#EFE7D3; --paper-deep:#E3D8B9; --card:#F8F3E4;
+    --ink:#211D16; --ink-soft:#6B6252; --line:#C9BC98;
+    --accent:#A3392B; --accent-deep:#822C21;
+    --scene-bg:#17140F;
+    --card-glass: rgba(248,243,228,0.9); --input-bg:#ffffff; --panel-fade: rgba(239,231,211,0.9);
+    --shadow: 0 1px 0 rgba(33,29,22,0.05), 0 6px 16px -8px rgba(33,29,22,0.3);
+    --font-ui:'Inter',sans-serif; --font-mono:'Space Mono',monospace;
+  }
+  :root[data-theme="dark"]{
+    --paper:#17140F; --paper-deep:#221D16; --card:#241F17;
+    --ink:#ECE2CB; --ink-soft:#9A9078; --line:#3A3226;
+    --accent:#E0725E; --accent-deep:#C85B48;
+    --scene-bg:#17140F;
+    --card-glass: rgba(36,31,23,0.65); --input-bg:#0f0d0a; --panel-fade: rgba(0,0,0,0.55);
+    --shadow: 0 1px 0 rgba(0,0,0,0.3), 0 6px 20px -8px rgba(0,0,0,0.6);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;overflow:hidden;font-family:var(--font-ui);}
+  body{background:var(--scene-bg);color:var(--ink);overscroll-behavior-y:contain;}
+  #canvas-wrap{position:absolute; inset:0;}
+  canvas{display:block; touch-action:none;}
+
+  #toast{
+    position:fixed; left:50%; bottom:24px; transform:translate(-50%,12px);
+    background:var(--ink); color:var(--paper); font-family:var(--font-ui);
+    font-size:14px; padding:10px 18px; border-radius:2px; opacity:0; pointer-events:none;
+    transition:opacity .2s ease, transform .2s ease; z-index:500; max-width:80vw; text-align:center;
+  }
+  #toast.show{opacity:1; transform:translate(-50%,0);}
+
+  header{
+    position:absolute; top:0; left:0; right:0; padding:calc(16px + env(safe-area-inset-top)) 22px 8px;
+    display:flex; justify-content:space-between; align-items:flex-start; z-index:5; pointer-events:none;
+  }
+  header .titleblock{
+    max-width:420px; background:var(--card-glass); border:1px solid var(--line);
+    border-radius:4px; padding:10px 14px;
+  }
+  header h1{font-size:18px; font-weight:600; margin:0; letter-spacing:0.3px; color:var(--ink);}
+  header h1 span{color:var(--ink-soft); font-weight:400;}
+  header p{font-size:12px; color:var(--ink-soft); margin:4px 0 0; line-height:1.5;}
+  .theme-btn{
+    pointer-events:auto; background:var(--card-glass); border:1px solid var(--line); color:var(--ink); font-family:var(--font-ui);
+    font-size:12px; padding:7px 14px; border-radius:2px; cursor:pointer;
+  }
+  .theme-btn:hover{border-color:var(--accent); color:var(--accent);}
+
+  #panel{
+    position:absolute; bottom:0; left:0; right:0; z-index:5;
+    background:linear-gradient(transparent, var(--panel-fade) 40%);
+    padding:14px 22px calc(14px + env(safe-area-inset-bottom));
+    display:flex; align-items:flex-end; justify-content:space-between; gap:20px; flex-wrap:wrap;
+  }
+  #readout{display:flex; gap:22px; font-family:var(--font-mono);}
+  #readout .cell{display:flex; flex-direction:column;}
+  #readout .cell .name{font-size:10px; color:var(--ink-soft); letter-spacing:1px;}
+  #readout .cell .val{font-size:19px; color:var(--ink);}
+  #readout .cell.hidden{display:none;}
+
+  #calc{
+    pointer-events:auto; display:flex; gap:6px; align-items:center; font-family:var(--font-ui);
+    background:var(--card-glass); border:1px solid var(--line); border-radius:3px; padding:8px 10px;
+  }
+  #calc input[type=text]{
+    width:64px; font-size:16px; font-family:var(--font-mono); padding:5px 6px; border:1px solid var(--line);
+    border-radius:2px; background:var(--input-bg); color:var(--ink);
+  }
+  #calc select{
+    font-size:13px; padding:5px 4px; border:1px solid var(--line); border-radius:2px; background:var(--input-bg); color:var(--ink); font-family:var(--font-ui);
+  }
+  #calc button{
+    background:var(--accent); border:none; color:#fff; font-family:var(--font-ui); font-size:12px;
+    padding:7px 12px; border-radius:2px; cursor:pointer;
+  }
+  #calc button:hover{background:var(--accent-deep);}
+  #calc .err{font-size:11px; color:var(--accent); margin-left:4px;}
+
+
+  #tutorialNav{pointer-events:auto; display:flex; gap:8px; align-items:center; font-family:var(--font-ui); flex-wrap:wrap;}
+  #tutorialNav #stepCount{font-size:11px; color:var(--ink-soft); margin:0 4px;}
+  #tutorialNav #stepDemo{border-color:var(--accent); color:var(--accent);}
+
+  #miniRuler{
+    position:absolute; bottom:96px; right:22px; z-index:5; pointer-events:none;
+    width:460px; background:var(--card-glass); border:1px solid var(--line); border-radius:4px;
+    padding:10px 14px 10px;
+  }
+  #miniLabel{font-size:11px; letter-spacing:0.5px; color:var(--ink-soft); text-transform:uppercase; margin-bottom:6px;}
+  #miniSvg{width:100%; display:block; pointer-events:auto; cursor:ew-resize; touch-action:none;}
+
+  .block-screen{display:none; padding:60px 24px; text-align:center; color:var(--ink-soft); background:var(--paper); height:100%;}
+  .block-screen strong{color:var(--ink); display:block; margin-bottom:8px; font-size:16px;}
+  @media (max-width: 759px){
+    .block-screen{display:flex; flex-direction:column; align-items:center; justify-content:center;}
+    #app-root{display:none;}
+  }
+</style>
+</head>
+<body>
+
+<div class="block-screen">
+  <strong>Requires a tablet or desktop.</strong>
+  Orbiting and dragging a 3D scene genuinely doesn't work on a phone-sized viewport — open Helix-Lon on an iPad or larger.
+</div>
+
+<div id="app-root">
+  <div id="canvas-wrap"></div>
+
+  <header>
+    <div class="titleblock">
+      <h1>HELIX-LON <span>— a helical slide rule, concept sketch</span></h1>
+      <p id="stepBody">Blue is D, fixed. Red is C — drag it along the axis to slide. Green is A (x²), amber is K (x³), purple is LL (eˣ), all fixed. Drag the white ring to move the cursor. Drag the background to orbit, scroll to zoom.</p>
+    </div>
+    <div style="pointer-events:auto; display:flex; flex-direction:row; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:6px; max-width:420px;">
+      <button class="theme-btn" id="themeBtn">Light chrome</button>
+      <button class="theme-btn" id="replayBtn" style="display:none;">Replay tutorial</button>
+      <button class="theme-btn" id="copyLinkBtn">Copy link to this view</button>
+      <div id="turnsControl" style="display:none; pointer-events:auto; align-items:center; gap:4px; background:var(--card-glass); border:1px solid var(--line); border-radius:2px; padding:4px 6px; font-family:var(--font-ui); font-size:12px; color:var(--ink);">
+        <span style="color:var(--ink-soft);">Turns</span>
+        <button id="turnsMinus" class="theme-btn" style="padding:3px 9px;">&minus;</button>
+        <span id="turnsValue" style="min-width:1.2em; text-align:center;">4</span>
+        <button id="turnsPlus" class="theme-btn" style="padding:3px 9px;">+</button>
+      </div>
+      <button class="theme-btn" id="unrollBtn" style="display:none; border-color:var(--accent); color:var(--accent);">Unroll to compare length</button>
+      <button class="theme-btn" id="exportSTLBtn" style="display:none;">Export STL</button>
+      <div id="footVersion" style="flex-basis:100%; font-size:10px; color:var(--ink-soft); text-align:right;"></div>
+    </div>
+  </header>
+
+  <div id="miniRuler">
+    <div id="miniLabel">Flat reference — same numbers, plain ruler (drag it too)</div>
+    <svg id="miniSvg" viewBox="0 0 1000 64" preserveAspectRatio="none"></svg>
+  </div>
+
+  <div id="panel">
+    <div id="readout">
+      <div class="cell" data-key="d"><span class="name">D</span><span class="val" id="valD">1</span></div>
+      <div class="cell" data-key="c"><span class="name">C</span><span class="val" id="valC">1</span></div>
+      <div class="cell" data-key="a"><span class="name">A</span><span class="val" id="valA">1</span></div>
+      <div class="cell" data-key="k"><span class="name">K</span><span class="val" id="valK">1</span></div>
+      <div class="cell" data-key="ll"><span class="name">LL (eˣ)</span><span class="val" id="valLL">2.72</span></div>
+      <div class="cell" data-key="s"><span class="name">S (sin)</span><span class="val" id="valS">30°</span></div>
+      <div class="cell" data-key="t"><span class="name">T (tan)</span><span class="val" id="valT">45°</span></div>
+      <div class="cell" data-key="l"><span class="name">L (log₁₀×10)</span><span class="val" id="valL">3.01</span></div>
+    </div>
+    <div id="calc" style="display:none;">
+      <input type="text" id="calcA" placeholder="a" inputmode="decimal">
+      <select id="calcOp">
+        <optgroup label="Basic">
+          <option value="mul">a × b</option>
+          <option value="div">a ÷ b</option>
+          <option value="sq">a²</option>
+          <option value="cube">a³</option>
+          <option value="sqrt">√a</option>
+          <option value="recip">1 ÷ a</option>
+          <option value="pow">aᵇ</option>
+        </optgroup>
+        <optgroup label="Trig (a in degrees)">
+          <option value="sin">sin(a)</option>
+          <option value="cos">cos(a)</option>
+          <option value="tan">tan(a)</option>
+        </optgroup>
+        <optgroup label="Logs & growth">
+          <option value="log10">log₁₀(a)</option>
+          <option value="ln">ln(a)</option>
+          <option value="exp">eᵃ</option>
+          <option value="logb">log_b(a)</option>
+        </optgroup>
+      </select>
+      <input type="text" id="calcB" placeholder="b" inputmode="decimal">
+      <button id="calcGo">Set</button>
+      <span class="err" id="calcErr"></span>
+    </div>
+    <div id="tutorialNav">
+      <button class="theme-btn" id="stepPrev">Back</button>
+      <span id="stepCount">Step 1 of 7</span>
+      <button class="theme-btn" id="stepNext">Next</button>
+      <button class="theme-btn" id="stepDemo" style="display:none;">Show me</button>
+      <button class="theme-btn" id="stepSkip">Skip tutorial</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+const APP_VERSION = '1.12.1';
+
+/* ============================= STANDARD HELPERS ============================= */
+function escapeHtml(str){
+  return String(str).replace(/[&<>"']/g, ch => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch]));
+}
+function escapeAttr(str){ return escapeHtml(str); }
+function confirmDialog(message, confirmLabel){
+  return new Promise(resolve => {
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;";
+    const box = document.createElement("div");
+    box.style.cssText = "background:var(--card);color:var(--ink);padding:20px 22px;border-radius:3px;max-width:320px;font-family:'Inter',sans-serif;";
+    const p = document.createElement("p");
+    p.textContent = message; p.style.margin = "0 0 16px";
+    const btnRow = document.createElement("div");
+    btnRow.style.cssText = "display:flex;justify-content:flex-end;gap:8px;";
+    const cancel = document.createElement("button");
+    cancel.textContent = "Cancel"; cancel.className = "theme-btn";
+    const ok = document.createElement("button");
+    ok.textContent = confirmLabel || "OK";
+    ok.style.cssText = "background:var(--accent);border:none;color:#fff;font-family:'Inter',sans-serif;font-size:13px;padding:8px 16px;border-radius:2px;cursor:pointer;";
+    cancel.onclick = () => { document.body.removeChild(overlay); resolve(false); };
+    ok.onclick = () => { document.body.removeChild(overlay); resolve(true); };
+    btnRow.appendChild(cancel); btnRow.appendChild(ok);
+    box.appendChild(p); box.appendChild(btnRow); overlay.appendChild(box);
+    document.body.appendChild(overlay);
+  });
+}
+function toast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast._h);
+  toast._h = setTimeout(()=>t.classList.remove("show"), 2200);
+}
+
+/* ============================= SCALE MATH ============================= */
+let N_TURNS = 4; // mutable — adjustable via the Turns stepper, triggers a full geometry rebuild
+const HEIGHT = 5.2;
+const log10 = x => Math.log(x) / Math.LN10;
+const wrap01 = f => ((f%1)+1)%1;
+
+const RADII = { l:0.35, ll:0.75, a:1.15, s:1.55, d:1.95, t:2.35, c:2.75, k:3.15 };
+const COLORS = { l:0xc4bfae, ll:0xa77bca, a:0x8fbf5a, s:0x4fc3d9, d:0x6c9bc4, t:0xd94f9e, c:0xe0725e, k:0xd8a23a };
+const LABEL_COLORS = { l:"#e0dcc9", ll:"#c9a8e0", a:"#a9d47f", s:"#8fdcec", d:"#9fc3e6", t:"#ec8fce", c:"#f0a494", k:"#e8c079" };
+
+/* ---------------- scene setup ---------------- */
+const wrap = document.getElementById("canvas-wrap");
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x17140f);
+
+const camera = new THREE.PerspectiveCamera(42, window.innerWidth/window.innerHeight, 0.1, 100);
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+wrap.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const key = new THREE.DirectionalLight(0xffffff, 0.9);
+key.position.set(4,6,5); scene.add(key);
+const rim = new THREE.DirectionalLight(0x6c9bc4, 0.4);
+rim.position.set(-4,-2,-5); scene.add(rim);
+
+const target = new THREE.Vector3(0, HEIGHT/2, 0);
+let camTheta = 0.6, camPhi = 1.25, camDist = 12.5;
+function updateCamera(){
+  camPhi = Math.max(0.35, Math.min(Math.PI-0.35, camPhi));
+  camera.position.set(
+    target.x + camDist*Math.sin(camPhi)*Math.sin(camTheta),
+    target.y + camDist*Math.cos(camPhi),
+    target.z + camDist*Math.sin(camPhi)*Math.cos(camTheta)
+  );
+  camera.lookAt(target);
+}
+updateCamera();
+
+/* ---------------- helix geometry (shared shape for every scale) ---------------- */
+function helixCurve(radius, phase){
+  const pts = [];
+  const STEPS = 600;
+  for (let i=0;i<=STEPS;i++){
+    const t = i/STEPS;
+    const angle = (phase||0) + 2*Math.PI*N_TURNS*t;
+    pts.push(new THREE.Vector3(radius*Math.cos(angle), t*HEIGHT, radius*Math.sin(angle)));
+  }
+  return new THREE.CatmullRomCurve3(pts);
+}
+function buildHelixMesh(radius, color, phase){
+  const curve = helixCurve(radius, phase);
+  const geo = new THREE.TubeGeometry(curve, 900, 0.024, 8, false);
+  const mat = new THREE.MeshStandardMaterial({ color, roughness:0.4, metalness:0.15 });
+  return new THREE.Mesh(geo, mat);
+}
+function makeLabelSprite(text, color){
+  const cnv = document.createElement("canvas");
+  cnv.width = 128; cnv.height = 64;
+  const ctx = cnv.getContext("2d");
+  ctx.font = "600 36px 'Space Mono', monospace";
+  ctx.fillStyle = color; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(text, 64, 34);
+  const tex = new THREE.CanvasTexture(cnv);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent:true });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(0.5, 0.25, 1);
+  return sprite;
+}
+// For full sentences (the unroll comparison captions), not the 1-4 character
+// tick labels makeLabelSprite() above is sized for — that function's 128x64
+// canvas at 36px font clips anything longer than a couple characters, which
+// is exactly what happened to the comparison bar's caption on first pass.
+function makeWideLabelSprite(text, color, worldWidth){
+  const cnv = document.createElement("canvas");
+  cnv.width = 1024; cnv.height = 128;
+  const ctx = cnv.getContext("2d");
+  ctx.font = "600 46px 'Space Mono', monospace";
+  ctx.fillStyle = color; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(text, 512, 64);
+  const tex = new THREE.CanvasTexture(cnv);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent:true });
+  const sprite = new THREE.Sprite(mat);
+  const w = worldWidth || 3.2;
+  sprite.scale.set(w, w*0.125, 1);
+  return sprite;
+}
+const NICE_VALUES = {
+  1: [1,2,3,4,5,6,7,8,9,10],
+  2: [1,2,3,4,5,7,10,20,30,50,70,100],
+  3: [1,2,5,10,20,50,100,200,500,1000]
+};
+function addTicks(group, radius, power, colorHex, labelColor, phase){
+  phase = phase || 0;
+  NICE_VALUES[power].forEach(vv=>{
+    const t = log10(vv)/power;
+    const angle = phase + 2*Math.PI*N_TURNS*t;
+    const y = t*HEIGHT;
+    const x = radius*Math.cos(angle), z = radius*Math.sin(angle);
+    const outward = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
+    const tickGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.28, 6);
+    const tickMat = new THREE.MeshStandardMaterial({ color: colorHex });
+    const tick = new THREE.Mesh(tickGeo, tickMat);
+    tick.position.set(x + outward.x*0.14, y, z + outward.z*0.14);
+    tick.rotation.z = Math.PI/2 - angle;
+    group.add(tick);
+    const label = makeLabelSprite(String(vv), labelColor);
+    label.position.set(x + outward.x*0.4, y, z + outward.z*0.4);
+    group.add(label);
+  });
+}
+
+// A and K are static reference scales — cursor reads them at every angle, so
+// unlike C (which must share D's phase for the slide-offset math to line up
+// at zero), they're free to start at a different clock position. Staggering
+// them keeps their tick labels from bunching with D/C's at the ends.
+const PHASE_A = Math.PI * 0.7;
+const PHASE_K = Math.PI * 1.4;
+const PHASE_LL = Math.PI * 0.35;
+
+// Each scale lives in its own group so the tutorial can reveal them one at a
+// time via group.visible, rather than toggling individual meshes.
+const dGroup = new THREE.Group(); scene.add(dGroup);
+const dHelixMesh = buildHelixMesh(RADII.d, COLORS.d);
+dGroup.add(dHelixMesh);
+const dTicksGroup = new THREE.Group(); dGroup.add(dTicksGroup);
+addTicks(dTicksGroup, RADII.d, 1, COLORS.d, LABEL_COLORS.d);
+
+const cHelixGroup = new THREE.Group();
+const cHelix = buildHelixMesh(RADII.c, COLORS.c);
+cHelixGroup.add(cHelix);
+scene.add(cHelixGroup);
+addTicks(cHelixGroup, RADII.c, 1, COLORS.c, LABEL_COLORS.c);
+
+const aGroup = new THREE.Group(); scene.add(aGroup);
+const aHelixMesh = buildHelixMesh(RADII.a, COLORS.a, PHASE_A);
+aGroup.add(aHelixMesh);
+addTicks(aGroup, RADII.a, 2, COLORS.a, LABEL_COLORS.a, PHASE_A);
+
+const kGroup = new THREE.Group(); scene.add(kGroup);
+const kHelixMesh = buildHelixMesh(RADII.k, COLORS.k, PHASE_K);
+kGroup.add(kHelixMesh);
+addTicks(kGroup, RADII.k, 3, COLORS.k, LABEL_COLORS.k, PHASE_K);
+
+// LL (log-log, "e^x") and the trig scales below all need custom tick sets
+// that don't fit the power-of-ten NICE_VALUES pattern addTicks() uses — this
+// is their shared tick generator, parameterized by the value list and the
+// scale's own toFrac function, so S and T don't need a third hand-copied
+// version of the same loop.
+function addCustomTicks(group, radius, phase, colorHex, labelColor, values, toFracFn, formatFn){
+  values.forEach(vv=>{
+    const t = toFracFn(vv);
+    if (t < -0.001 || t > 1.001) return;
+    const angle = phase + 2*Math.PI*N_TURNS*t;
+    const y = t*HEIGHT;
+    const x = radius*Math.cos(angle), z = radius*Math.sin(angle);
+    const outward = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
+    const tick = new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.28,6), new THREE.MeshStandardMaterial({ color: colorHex }));
+    tick.position.set(x + outward.x*0.14, y, z + outward.z*0.14);
+    tick.rotation.z = Math.PI/2 - angle;
+    group.add(tick);
+    const label = makeLabelSprite(formatFn ? formatFn(vv) : String(vv), labelColor);
+    label.position.set(x + outward.x*0.4, y, z + outward.z*0.4);
+    group.add(label);
+  });
+}
+
+// LL (log-log, "e^x") — same double-log math as the flat DECI-LON's LL
+// scales: t = log10(ln v), so v = e^(10^t).
+const llGroup = new THREE.Group(); scene.add(llGroup);
+const llHelixMesh = buildHelixMesh(RADII.ll, COLORS.ll, PHASE_LL);
+llGroup.add(llHelixMesh);
+const LL_NICE_VALUES = [3,4,5,7,10,15,20,30,50,100,200,500,1000,3000,10000,22026];
+addCustomTicks(llGroup, RADII.ll, PHASE_LL, COLORS.ll, LABEL_COLORS.ll, LL_NICE_VALUES,
+  vv => log10(Math.log(vv)), vv => vv>=1000 ? Math.round(vv/1000)+"k" : String(vv));
+
+// S (sine) and T (tangent) — same formulas as the flat tool: reading D
+// alongside S/T at the same cursor height gives 10·sin(angle) or
+// 10·tan(angle), matching the standard slide-rule convention of tracking
+// the decimal point yourself. Domains match real S/T scales (~5.7°–90° and
+// ~5.7°–45°) since sin/tan compress too fast outside that range to be
+// readable on a scale this size.
+const PHASE_S = Math.PI * 1.05;
+const PHASE_T = Math.PI * 1.75;
+const S_NICE_VALUES = [6,7,8,9,10,15,20,25,30,40,50,60,70,80,90];
+const T_NICE_VALUES = [6,7,8,9,10,15,20,25,30,35,40,45];
+const sGroup = new THREE.Group(); scene.add(sGroup);
+const sHelixMesh = buildHelixMesh(RADII.s, COLORS.s, PHASE_S);
+sGroup.add(sHelixMesh);
+addCustomTicks(sGroup, RADII.s, PHASE_S, COLORS.s, LABEL_COLORS.s, S_NICE_VALUES,
+  d => log10(Math.sin(d*Math.PI/180))+1, d => d+"\u00b0");
+const tGroup = new THREE.Group(); scene.add(tGroup);
+const tHelixMesh = buildHelixMesh(RADII.t, COLORS.t, PHASE_T);
+tGroup.add(tHelixMesh);
+addCustomTicks(tGroup, RADII.t, PHASE_T, COLORS.t, LABEL_COLORS.t, T_NICE_VALUES,
+  d => log10(Math.tan(d*Math.PI/180))+1, d => d+"\u00b0");
+
+// L (linear) — the piece the flat DECI-LON uses to read a logarithm's value
+// directly: L.toFrac(v) = v/10 is the one non-logarithmic scale here, a
+// straight linear mapping over [0,10]. Reading L at the same cursor height
+// as D gives 10×log10(D's value) — divide by 10 for the actual log10.
+const PHASE_L = Math.PI * 1.4;
+const L_NICE_VALUES = [0,1,2,3,4,5,6,7,8,9,10];
+const lGroup = new THREE.Group(); scene.add(lGroup);
+const lHelixMesh = buildHelixMesh(RADII.l, COLORS.l, PHASE_L);
+lGroup.add(lHelixMesh);
+addCustomTicks(lGroup, RADII.l, PHASE_L, COLORS.l, LABEL_COLORS.l, L_NICE_VALUES,
+  v => v/10, v => String(v));
+
+/* base + axis rod, purely for visual grounding */
+const axis = new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.018,HEIGHT,8), new THREE.MeshStandardMaterial({ color:0x3a3226 }));
+axis.position.y = HEIGHT/2;
+scene.add(axis);
+[0,HEIGHT].forEach(y=>{
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(RADII.k+0.15,0.01,8,60), new THREE.MeshStandardMaterial({color:0x3a3226}));
+  ring.rotation.x = Math.PI/2; ring.position.y = y; scene.add(ring);
+});
+
+
+/* cursor: translucent disk + rim ring, slides along the shared axis, reads all four scales at once */
+const cursorGroup = new THREE.Group();
+const disk = new THREE.Mesh(
+  new THREE.CircleGeometry(RADII.k+0.2, 48),
+  new THREE.MeshStandardMaterial({ color:0xece2cb, transparent:true, opacity:0.1, side:THREE.DoubleSide })
+);
+disk.rotation.x = Math.PI/2;
+cursorGroup.add(disk);
+const rimRing = new THREE.Mesh(new THREE.TorusGeometry(RADII.k+0.2,0.018,8,60), new THREE.MeshStandardMaterial({color:0xece2cb, emissive:0x333025}));
+rimRing.rotation.x = Math.PI/2;
+cursorGroup.add(rimRing);
+// a real point light at the cursor, not just an emissive material — casts
+// an actual soft glow onto whichever helix segments are nearby, so the
+// cursor visibly "lights up" the scales it's touching rather than just
+// looking brighter itself. Cheaper and more robust than true bloom
+// post-processing (which needs EffectComposer/UnrealBloomPass — extra
+// script dependencies this build doesn't otherwise need).
+const cursorLight = new THREE.PointLight(0xece2cb, 0.9, 2.6, 2);
+cursorGroup.add(cursorLight);
+scene.add(cursorGroup);
+
+/* invisible drag handles */
+const cursorHandle = new THREE.Mesh(
+  new THREE.CylinderGeometry(RADII.k+0.25, RADII.k+0.25, 1.1, 24),
+  new THREE.MeshBasicMaterial({ visible:false })
+);
+cursorGroup.add(cursorHandle);
+const slideHandle = new THREE.Mesh(
+  new THREE.CylinderGeometry(RADII.c+0.15, RADII.c+0.15, HEIGHT, 24, 1, true),
+  new THREE.MeshBasicMaterial({ visible:false })
+);
+slideHandle.position.y = HEIGHT/2;
+cHelixGroup.add(slideHandle);
+
+/* ---------------- state ---------------- */
+let cursorT = log10(2);   // start at D=2
+let slideOffset = 0;      // C shifted by this many t-units
+// Shared bounds for both the 3D drag handlers and the mini-ruler's own drag
+// handlers below — one definition so the two interaction surfaces can't
+// silently drift onto different limits.
+function clampCursorT(v){ return Math.max(-0.05, Math.min(1.05, v)); }
+function clampSlideOffset(v){ return Math.max(-1.5, Math.min(1.5, v)); }
+// Gates which handles/scales the tutorial has introduced yet — set by
+// renderStep(). Declared here (rather than down in the interaction section)
+// because renderMiniRuler() below reads it and layout() runs immediately.
+let revealed = { cursor:true, slide:true, d:true, c:false, a:false, k:false, ll:false, s:false, t:false, l:false };
+
+function fmt(v){
+  if (!isFinite(v)) return "—";
+  const p = v.toPrecision(5);
+  return parseFloat(p).toString();
+}
+
+/* ---------------- mini reference ruler ----------------
+   A plain flat strip mirroring the exact same numbers as the helix, always
+   visible (permanent, not just during onboarding — a person who's used to
+   the 3D view can still keep checking it, and it's the clearest evidence
+   that the spiral and the ruler are the same object). Grows from D/C alone
+   to all five scales as the tutorial reveals them, then stays complete
+   through free play. Reuses the exact same NICE_VALUES / LL_NICE_VALUES
+   tables already built for the 3D tick marks — one source of truth for
+   "which numbers are worth labeling" on both the helix and this strip.
+   Every scale here shares the flat DECI-LON tool's math, not a variant of it. */
+function svgEl(tag){ return document.createElementNS("http://www.w3.org/2000/svg", tag); }
+const MINI_ROW_H = 75; // viewBox units per row — must comfortably fit tick + label above the baseline
+const MINI_ROWS = [
+  { key:"d",  color:"#6C9BC4", label:"#9fc3e6", values:NICE_VALUES[1],  toFrac:v=>log10(v) },
+  { key:"c",  color:"#E0725E", label:"#f0a494", values:NICE_VALUES[1],  toFrac:v=>log10(v), periodic:true },
+  { key:"a",  color:"#8fbf5a", label:"#a9d47f", values:NICE_VALUES[2],  toFrac:v=>log10(v)/2 },
+  { key:"k",  color:"#d8a23a", label:"#e8c079", values:NICE_VALUES[3],  toFrac:v=>log10(v)/3 },
+  { key:"ll", color:"#a77bca", label:"#c9a8e0", values:LL_NICE_VALUES,  toFrac:v=>log10(Math.log(v)) },
+  { key:"s",  color:"#4fc3d9", label:"#8fdcec", values:S_NICE_VALUES,   toFrac:d=>log10(Math.sin(d*Math.PI/180))+1, format:d=>d+"\u00b0" },
+  { key:"t",  color:"#d94f9e", label:"#ec8fce", values:T_NICE_VALUES,   toFrac:d=>log10(Math.tan(d*Math.PI/180))+1, format:d=>d+"\u00b0" },
+  { key:"l",  color:"#c4bfae", label:"#e0dcc9", values:L_NICE_VALUES,   toFrac:v=>v/10 }
+];
+let miniActiveRows = []; // set by renderMiniRuler(), read by the drag handlers below
+function renderMiniRuler(){
+  const svg = document.getElementById("miniSvg");
+  svg.innerHTML = "";
+  const active = MINI_ROWS.filter(r => revealed[r.key]);
+  miniActiveRows = active; // exposed for the drag handlers below, so hit-testing always matches what's actually drawn
+  const totalH = active.length*MINI_ROW_H + 10;
+  svg.setAttribute("viewBox", `0 0 1000 ${totalH}`);
+  const scale = (svg.clientWidth || 432) / 1000;
+  svg.style.height = (totalH*scale) + "px";
+  active.forEach((row,i)=>{
+    const baseY = (i+1)*MINI_ROW_H - 8;
+    const base = svgEl("line");
+    base.setAttribute("x1",0); base.setAttribute("x2",1000); base.setAttribute("y1",baseY); base.setAttribute("y2",baseY);
+    base.setAttribute("stroke", row.color); base.setAttribute("stroke-width","4");
+    svg.appendChild(base);
+    // First pass: compute every tick's position and label text, always drawing
+    // the tick itself. Collected (not drawn yet) so the label pass below can
+    // reason about neighbors in on-screen left-to-right order — necessary for
+    // periodic rows (C) where wrap01() means x-order isn't the same as the
+    // row.values order.
+    const entries = [];
+    row.values.forEach(v=>{
+      let f = row.toFrac(v);
+      if (row.periodic) f = wrap01(f + slideOffset);
+      if (f < -0.001 || f > 1.001) return;
+      const x = Math.max(0,Math.min(1,f))*1000;
+      const tick = svgEl("line");
+      tick.setAttribute("x1",x); tick.setAttribute("x2",x); tick.setAttribute("y1",baseY-30); tick.setAttribute("y2",baseY);
+      tick.setAttribute("stroke", row.color); tick.setAttribute("stroke-width","3");
+      svg.appendChild(tick);
+      entries.push({ x, text: String(row.format ? row.format(v) : (v>=1000 ? Math.round(v/1000)+"k" : v)) });
+    });
+    // Second pass: draw labels left to right, in real screen order.
+    // Two regressions this guards against:
+    // (1) edge clipping — text-anchor="middle" centers a label ON its tick,
+    //     so a tick at x=0 or x=1000 (always true for the first/last tick of
+    //     every row) rendered half its glyph outside the SVG's own viewBox,
+    //     which clips by default. Ticks within ~9 monospace characters of
+    //     either edge anchor from that edge instead of their center.
+    // (2) label crowding — scales that compress hard near one end (S, T, LL
+    //     all do, since they're built on sin/tan/log-log rather than a plain
+    //     log) can pack several nice-values within a few px of each other.
+    //     A monospace-width estimate (13 viewBox units/char at font-size 22)
+    //     is used to skip drawing (not the tick, just the label) any entry
+    //     that would overlap the previously-drawn label in this row.
+    const CHAR_W = 16, MIN_GAP = 10;
+    entries.sort((a,b)=>a.x-b.x);
+    let lastLabelRight = -Infinity;
+    entries.forEach(({x,text})=>{
+      const halfW = text.length*CHAR_W/2;
+      const left = x-halfW;
+      if (left < lastLabelRight + MIN_GAP) return; // too close to the previous label — tick stays, label skipped
+      let anchor = "middle", tx = x;
+      if (x - halfW < 0){ anchor = "start"; tx = 2; }
+      else if (x + halfW > 1000){ anchor = "end"; tx = 998; }
+      const txt = svgEl("text");
+      txt.setAttribute("x",tx); txt.setAttribute("y",baseY-42); txt.setAttribute("font-size","22"); txt.setAttribute("text-anchor",anchor);
+      txt.setAttribute("fill", row.label); txt.setAttribute("font-family","monospace"); txt.setAttribute("font-weight","600");
+      txt.textContent = text;
+      svg.appendChild(txt);
+      lastLabelRight = (anchor==="start" ? tx : anchor==="end" ? x+halfW : x+halfW);
+    });
+  });
+  const cursorX = wrap01(cursorT)*1000;
+  const cursorLine = svgEl("line");
+  cursorLine.setAttribute("x1",cursorX); cursorLine.setAttribute("x2",cursorX);
+  cursorLine.setAttribute("y1",0); cursorLine.setAttribute("y2",totalH);
+  cursorLine.setAttribute("stroke","#ECE2CB"); cursorLine.setAttribute("stroke-width","5");
+  svg.appendChild(cursorLine);
+}
+
+function layout(){
+  cursorGroup.position.y = cursorT*HEIGHT;
+  cHelixGroup.position.y = slideOffset*HEIGHT;
+  cHelixGroup.rotation.y = slideOffset*2*Math.PI*N_TURNS; // cosmetic screw twist only
+  const dVal = Math.pow(10, wrap01(cursorT));
+  const cVal = Math.pow(10, wrap01(cursorT - slideOffset));
+  const clampedT = Math.max(0, Math.min(1, cursorT));
+  const aVal = Math.pow(10, 2*clampedT);
+  const kVal = Math.pow(10, 3*clampedT);
+  const llVal = Math.exp(Math.pow(10, clampedT));
+  const sVal = Math.asin(Math.pow(10, clampedT-1))*180/Math.PI;
+  const tVal = Math.atan(Math.pow(10, clampedT-1))*180/Math.PI;
+  const lVal = clampedT*10;
+  document.getElementById("valD").textContent = fmt(dVal);
+  document.getElementById("valC").textContent = fmt(cVal);
+  document.getElementById("valA").textContent = fmt(aVal);
+  document.getElementById("valK").textContent = fmt(kVal);
+  document.getElementById("valLL").textContent = fmt(llVal);
+  document.getElementById("valS").textContent = fmt(sVal)+"\u00b0";
+  document.getElementById("valT").textContent = fmt(tVal)+"\u00b0";
+  document.getElementById("valL").textContent = fmt(lVal);
+  renderMiniRuler();
+}
+layout();
+
+/* ---------------- mini-ruler interaction ----------------
+   The flat strip mirrors the 3D state, so it can drive it too: drag
+   anywhere on the strip to move the cursor (same as the white ring),
+   or drag specifically on the C row to slide it (same as the red helix).
+   Which one happens is decided by which row's band the drag started in —
+   found by re-deriving the same baseY math renderMiniRuler() used to draw
+   the rows, against miniActiveRows (so it always matches what's currently
+   drawn, including which rows the tutorial has revealed so far). */
+const miniSvgEl = document.getElementById("miniSvg");
+let miniDragMode = null; // 'cursor' | 'slide'
+let miniDragStartX = 0, miniDragStartCursorT = 0, miniDragStartOffset = 0;
+function miniLocalXY(e){
+  const rect = miniSvgEl.getBoundingClientRect();
+  const vb = miniSvgEl.viewBox.baseVal;
+  return {
+    x: (e.clientX-rect.left)/rect.width * vb.width,
+    y: (e.clientY-rect.top)/rect.height * vb.height
+  };
+}
+miniSvgEl.addEventListener("pointerdown", e=>{
+  if (!revealed.cursor) return;
+  lastInteractionTime = Date.now();
+  const {x,y} = miniLocalXY(e);
+  let hitRow = null;
+  miniActiveRows.forEach((row,i)=>{
+    const baseY = (i+1)*MINI_ROW_H - 8;
+    if (Math.abs(y-baseY) < MINI_ROW_H/2) hitRow = row;
+  });
+  miniDragStartX = x;
+  miniDragStartCursorT = cursorT;
+  miniDragStartOffset = slideOffset;
+  miniDragMode = (hitRow && hitRow.key === "c" && revealed.slide) ? "slide" : "cursor";
+  miniSvgEl.setPointerCapture(e.pointerId);
+});
+miniSvgEl.addEventListener("pointermove", e=>{
+  if (!miniDragMode) return;
+  const {x} = miniLocalXY(e);
+  const dFrac = (x-miniDragStartX)/1000; // viewBox is always 1000 units wide
+  if (miniDragMode === "cursor") cursorT = clampCursorT(miniDragStartCursorT + dFrac);
+  else slideOffset = clampSlideOffset(miniDragStartOffset + dFrac);
+  layout();
+});
+["pointerup","pointercancel"].forEach(ev => miniSvgEl.addEventListener(ev, ()=>{
+  if (miniDragMode === "cursor") trySnapCursor();
+  if (miniDragMode) saveState();
+  miniDragMode = null;
+}));
+
+/* ---------------- interaction ---------------- */
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let dragMode = null; // 'cursor' | 'slide' | 'orbit'
+let orbitLastX=0, orbitLastY=0;
+let dragStartX=0, dragStartY=0, dragStartCursorT=0, dragStartOffset=0;
+const DRAG_SENS = 0.0026;
+
+function pick(clientX, clientY){
+  mouse.x = (clientX/window.innerWidth)*2-1;
+  mouse.y = -(clientY/window.innerHeight)*2+1;
+  raycaster.setFromCamera(mouse, camera);
+  if (revealed.cursor){
+    const cursorHit = raycaster.intersectObject(cursorHandle, false);
+    if (cursorHit.length) return cursorHandle;
+  }
+  if (revealed.slide){
+    const slideHit = raycaster.intersectObject(slideHandle, false);
+    if (slideHit.length) return slideHandle;
+  }
+  return null;
+}
+
+renderer.domElement.addEventListener("pointerdown", e=>{
+  lastInteractionTime = Date.now();
+  const hit = pick(e.clientX, e.clientY);
+  orbitLastX = e.clientX; orbitLastY = e.clientY;
+  dragStartX = e.clientX; dragStartY = e.clientY;
+  dragStartCursorT = cursorT; dragStartOffset = slideOffset;
+  if (hit === cursorHandle) dragMode = "cursor";
+  else if (hit === slideHandle) dragMode = "slide";
+  else dragMode = "orbit";
+  renderer.domElement.setPointerCapture(e.pointerId);
+});
+renderer.domElement.addEventListener("pointermove", e=>{
+  if (!dragMode) return;
+  if (dragMode === "orbit"){
+    const dx = e.clientX-orbitLastX, dy = e.clientY-orbitLastY;
+    camTheta -= dx*0.006;
+    camPhi -= dy*0.006;
+    updateCamera();
+    orbitLastX = e.clientX; orbitLastY = e.clientY;
+    return;
+  }
+  const dyTotal = e.clientY - dragStartY;
+  if (dragMode === "cursor"){
+    cursorT = clampCursorT(dragStartCursorT - dyTotal*DRAG_SENS);
+  } else if (dragMode === "slide"){
+    slideOffset = clampSlideOffset(dragStartOffset - dyTotal*DRAG_SENS);
+  }
+  layout();
+});
+// Snaps the cursor to the nearest whole D value if a drag ends close to one
+// — small enough threshold that it only catches "I was clearly aiming for
+// this number," not every drag. Preserves which turn of the helix the
+// cursor was on (only the fractional part snaps), and gives a quick scale
+// pulse so the snap is visible, not just numerically exact.
+const SNAP_THRESHOLD = 0.012;
+function trySnapCursor(){
+  let best = null, bestDist = SNAP_THRESHOLD;
+  NICE_VALUES[1].forEach(v=>{
+    const f = log10(v);
+    const local = wrap01(cursorT);
+    const dist = Math.min(Math.abs(local-f), 1-Math.abs(local-f));
+    if (dist < bestDist){ bestDist = dist; best = f; }
+  });
+  if (best !== null){
+    cursorT = Math.floor(cursorT) + best;
+    layout();
+    pulseCursor();
+  }
+}
+function pulseCursor(){
+  const start = performance.now();
+  function frame(now){
+    const t = Math.min(1, (now-start)/260);
+    const s = 1 + 0.18*Math.sin(t*Math.PI);
+    cursorGroup.scale.set(s, 1, s);
+    if (t < 1) requestAnimationFrame(frame); else cursorGroup.scale.set(1,1,1);
+  }
+  requestAnimationFrame(frame);
+}
+
+renderer.domElement.addEventListener("pointerup", ()=>{
+  if (dragMode === "cursor") trySnapCursor();
+  dragMode = null;
+});
+renderer.domElement.addEventListener("pointercancel", ()=>{ dragMode = null; });
+
+// scroll/pinch to zoom out for more room around the helix
+renderer.domElement.addEventListener("wheel", e=>{
+  e.preventDefault();
+  lastInteractionTime = Date.now();
+  camDist = Math.max(5, Math.min(24, camDist + e.deltaY*0.01));
+  updateCamera();
+}, { passive:false });
+
+// arrow keys nudge the cursor/slide — same clamped state either drag path
+// writes to, so this is a third interaction surface for free, not a
+// separate implementation. Ignored while typing in a form field.
+window.addEventListener("keydown", e=>{
+  const tag = (e.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "select" || tag === "textarea") return;
+  if (!revealed.cursor) return;
+  lastInteractionTime = Date.now();
+  const step = e.shiftKey ? 0.05 : 0.01;
+  if (e.key === "ArrowUp"){ cursorT = clampCursorT(cursorT + step); layout(); saveState(); e.preventDefault(); }
+  else if (e.key === "ArrowDown"){ cursorT = clampCursorT(cursorT - step); layout(); saveState(); e.preventDefault(); }
+  else if (e.key === "ArrowRight" && revealed.slide){ slideOffset = clampSlideOffset(slideOffset + step); layout(); saveState(); e.preventDefault(); }
+  else if (e.key === "ArrowLeft" && revealed.slide){ slideOffset = clampSlideOffset(slideOffset - step); layout(); saveState(); e.preventDefault(); }
+});
+
+window.addEventListener("resize", ()=>{
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* ---------------- quick calculate ---------------- */
+const TWO_INPUT_OPS = new Set(["mul","div","pow","logb"]);
+document.getElementById("calcOp").addEventListener("change", ()=>{
+  const op = document.getElementById("calcOp").value;
+  document.getElementById("calcB").style.display = TWO_INPUT_OPS.has(op) ? "" : "none";
+});
+document.getElementById("calcGo").addEventListener("click", ()=>{
+  const errEl = document.getElementById("calcErr");
+  errEl.textContent = "";
+  const aStr = document.getElementById("calcA").value;
+  const bStr = document.getElementById("calcB").value;
+  const op = document.getElementById("calcOp").value;
+  const a = parseFloat(aStr);
+  const needsB = TWO_INPUT_OPS.has(op);
+  if (isNaN(a) || (needsB && isNaN(parseFloat(bStr)))){
+    errEl.textContent = "Enter the needed value(s) first.";
+    return;
+  }
+  const b = parseFloat(bStr);
+  // floor(log10(x) - epsilon) rather than floor(log10(x)): without the epsilon,
+  // an exact power of ten (e.g. 10 itself) rounds to mantissa 1 in the NEXT
+  // decade instead of mantissa 10 at the top of the current one — harmless for
+  // C/D (same physical point on a periodic scale either way) but wrong for the
+  // non-periodic A/K/LL/S/T readouts, where "10 squared" landing at cursorT=0
+  // reads as 1² instead of 10².
+  const mant = x => x/Math.pow(10, Math.floor(log10(x) - 1e-9));
+  const D2Rl = Math.PI/180;
+  let toastMsg = "";
+  if (op === "mul"){
+    slideOffset = log10(mant(a));
+    cursorT = log10(mant(a)) + log10(mant(b));
+    toastMsg = `${fmt(a)} × ${fmt(b)} — read D under the cursor`;
+  } else if (op === "div"){
+    slideOffset = log10(mant(a)) - log10(mant(b));
+    cursorT = log10(mant(a));
+    toastMsg = `${fmt(a)} ÷ ${fmt(b)} — read D under the cursor`;
+  } else if (op === "sq"){
+    slideOffset = 0; cursorT = log10(mant(a));
+    toastMsg = `${fmt(a)}² — read A under the cursor`;
+  } else if (op === "cube"){
+    slideOffset = 0; cursorT = log10(mant(a));
+    toastMsg = `${fmt(a)}³ — read K under the cursor`;
+  } else if (op === "sqrt"){
+    slideOffset = 0; cursorT = clampCursorT(log10(a)/2);
+    toastMsg = `√${fmt(a)} — read A under the cursor (best for a between 1 and 100)`;
+  } else if (op === "recip"){
+    slideOffset = 0; cursorT = -log10(mant(a));
+    toastMsg = `1 ÷ ${fmt(a)} — read D under the cursor`;
+  } else if (op === "sin"){
+    slideOffset = 0; cursorT = clampCursorT(log10(Math.sin(a*D2Rl))+1);
+    toastMsg = `sin(${fmt(a)}°) — read D under the cursor (S shows the angle itself)`;
+  } else if (op === "cos"){
+    slideOffset = 0; cursorT = clampCursorT(log10(Math.sin((90-a)*D2Rl))+1);
+    toastMsg = `cos(${fmt(a)}°) = sin(${fmt(90-a)}°) — read D under the cursor`;
+  } else if (op === "tan"){
+    slideOffset = 0; cursorT = clampCursorT(log10(Math.tan(a*D2Rl))+1);
+    toastMsg = `tan(${fmt(a)}°) — read D under the cursor (T shows the angle itself)`;
+  } else if (op === "log10"){
+    slideOffset = 0; cursorT = clampCursorT(log10(mant(a)));
+    toastMsg = `log\u2081\u2080(${fmt(a)}) = ${fmt(log10(a))} — read L under the cursor for the mantissa (\u00f710), then add the characteristic yourself from a's digit count, same as a log table`;
+  } else if (op === "ln"){
+    slideOffset = 0; cursorT = clampCursorT(log10(Math.log(a)));
+    toastMsg = `ln(${fmt(a)}) — read D under the cursor`;
+  } else if (op === "exp"){
+    slideOffset = 0; cursorT = clampCursorT(log10(a));
+    toastMsg = `e^${fmt(a)} — read LL under the cursor`;
+  } else if (op === "pow"){
+    // a^b = e^(b·ln a) — same D-under-LL relationship as e^x, just with the
+    // exponent scaled by b first. Directly readable on LL, no new mechanism.
+    slideOffset = 0; cursorT = clampCursorT(log10(b*Math.log(a)));
+    toastMsg = `${fmt(a)}^${fmt(b)} — read LL under the cursor`;
+  } else if (op === "logb"){
+    // log_b(a) = ln(a)/ln(b) — not directly readable (would need a second
+    // cursor position), so computed and reported, same honesty as log10
+    // before the L scale existed. D parked at ln(a) since that much is
+    // still a real reading.
+    slideOffset = 0; cursorT = clampCursorT(log10(Math.log(a)));
+    toastMsg = `log_${fmt(b)}(${fmt(a)}) = ${fmt(Math.log(a)/Math.log(b))} — D is parked at ln(a) for reference; dividing two scale readings isn't something a single cursor position can show`;
+  }
+  layout();
+  saveState();
+  toast(toastMsg);
+});
+
+/* ---------------- theme (chrome only — the 3D scene stays dark, like most 3D tool viewports) ---------------- */
+function applyTheme(t){
+  document.documentElement.setAttribute("data-theme", t);
+  document.getElementById("themeBtn").textContent = t === "dark" ? "Light chrome" : "Dark chrome";
+}
+document.getElementById("themeBtn").addEventListener("click", ()=>{
+  const cur = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+  applyTheme(cur);
+  localStorage.setItem("helixlon-theme", cur);
+});
+
+/* ---------------- unroll: proves the length claim instead of asserting it ----------------
+   The header used to say "4 turns ≈ 4× the effective length" — a guess based on
+   turn count alone, ignoring the radius. The real relationship for a helix of
+   radius R, N turns, height H is arc length = sqrt((2πRN)² + H²), which is NOT
+   simply proportional to N. Computed exactly, D's actual arc length is closer to
+   9.5× HEIGHT than 4× — this constant is now the one source of truth for that
+   number everywhere it's stated, so it can't drift out of sync with the geometry
+   again. This section also builds the "Unroll" toggle: animates D from its coiled
+   helix into a straight line of that exact computed length, with a short
+   reference bar (length HEIGHT) alongside for direct visual comparison — the
+   thing a one-line claim in the header could never really convey.
+   Only D unrolls (not the other seven scales) — one scale is enough to make the
+   point, and C's slide-offset interaction doesn't have a meaningful analog in
+   the unrolled state, so leaving it coiled avoids a half-explained edge case. */
+let D_ARC_LENGTH = Math.sqrt(Math.pow(2*Math.PI*N_TURNS*RADII.d, 2) + HEIGHT*HEIGHT);
+let LENGTH_RATIO = D_ARC_LENGTH / HEIGHT;
+
+function morphedDPoint(t, u){
+  const angle = 2*Math.PI*N_TURNS*t;
+  const cx = RADII.d*Math.cos(angle), cy = t*HEIGHT, cz = RADII.d*Math.sin(angle);
+  const sx = t*D_ARC_LENGTH, sy = 0, sz = 0;
+  return new THREE.Vector3(cx+(sx-cx)*u, cy+(sy-cy)*u, cz+(sz-cz)*u);
+}
+function rebuildDGeometry(u, steps){
+  // steps defaults to 200 — fewer than the 900 used elsewhere, since this
+  // rebuilds every animation frame during the unroll/coil tween and a thin
+  // tube doesn't need full resolution to read cleanly mid-motion. Pass 900
+  // explicitly for the settled (non-animating) state — see the regression
+  // note below for why that distinction matters.
+  steps = steps || 200;
+  const pts = [];
+  for (let i=0;i<=steps;i++) pts.push(morphedDPoint(i/steps, u));
+  const newGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), steps, 0.024, 8, false);
+  dHelixMesh.geometry.dispose();
+  dHelixMesh.geometry = newGeo;
+}
+
+// Straight-state ticks, built at startup and rebuilt whenever N_TURNS changes
+// (D_ARC_LENGTH depends on it) — hidden until unrolled. Same NICE_VALUES the
+// coiled dTicksGroup already uses, just laid out along the unrolled line's
+// actual length instead of wrapped around the cylinder.
+const dStraightTicksGroup = new THREE.Group(); dStraightTicksGroup.visible = false; scene.add(dStraightTicksGroup);
+function buildDStraightTicks(){
+  NICE_VALUES[1].forEach(v=>{
+    const x = log10(v) * D_ARC_LENGTH;
+    const tick = new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.28,6), new THREE.MeshStandardMaterial({ color: COLORS.d }));
+    tick.position.set(x, 0.14, 0);
+    dStraightTicksGroup.add(tick);
+    const label = makeLabelSprite(String(v), LABEL_COLORS.d);
+    label.position.set(x, 0.42, 0);
+    dStraightTicksGroup.add(label);
+  });
+}
+buildDStraightTicks();
+
+// The comparison bar: a plain straight segment of length HEIGHT — what a
+// straight scale would give you in the same vertical footprint the whole
+// coiled instrument occupies. Only shown once unrolled, offset in Z so it
+// doesn't overlap D's own line. The bar itself and its caption don't depend
+// on N_TURNS (HEIGHT never changes), but the ratio label's text does, so
+// it's built by its own function to make refreshing it after a turns change
+// a single call rather than tearing down the whole group.
+const comparisonGroup = new THREE.Group(); comparisonGroup.visible = false; scene.add(comparisonGroup);
+{
+  const barGeo = new THREE.CylinderGeometry(0.02, 0.02, HEIGHT, 8);
+  const barMat = new THREE.MeshStandardMaterial({ color: 0x9a9078 });
+  const bar = new THREE.Mesh(barGeo, barMat);
+  bar.rotation.z = Math.PI/2;
+  bar.position.set(HEIGHT/2, 0, -0.6);
+  comparisonGroup.add(bar);
+  const barLabel = makeWideLabelSprite("straight scale, same footprint", "#c9bc98", 3.4);
+  barLabel.position.set(HEIGHT/2, 0.35, -0.6);
+  comparisonGroup.add(barLabel);
+}
+let ratioLabelSprite = null;
+function buildRatioLabel(){
+  if (ratioLabelSprite){
+    comparisonGroup.remove(ratioLabelSprite);
+    ratioLabelSprite.material.map.dispose();
+    ratioLabelSprite.material.dispose();
+  }
+  ratioLabelSprite = makeWideLabelSprite(LENGTH_RATIO.toFixed(1)+"\u00d7 longer \u2014 same vertical space", "#ece2cb", 4.4);
+  ratioLabelSprite.position.set(HEIGHT*1.6, 1.3, 0);
+  comparisonGroup.add(ratioLabelSprite);
+}
+buildRatioLabel();
+
+/* ---------------- turns: makes the length claim and camera shot genuinely
+   responsive instead of fixed constants ----------------
+   N_TURNS previously only mattered at boot — the ratio, the geometry, and
+   the unrolled camera shot were all baked in once and never revisited, so
+   "Unroll" looked identical every time regardless of anything the person
+   did. Promoting it to a live, adjustable parameter means the 9.5× number
+   is an actual consequence of a dial someone can turn, not a fact stated
+   once and never touched again. */
+function disposeTicksFrom(group, keep){
+  for (let i = group.children.length - 1; i >= 0; i--){
+    const child = group.children[i];
+    if (keep && keep.has(child)) continue;
+    group.remove(child);
+    if (child.geometry) child.geometry.dispose();
+    if (child.material){
+      if (child.material.map) child.material.map.dispose();
+      child.material.dispose();
+    }
+  }
+}
+function rebuildHelixTube(mesh, radius, phase){
+  const curve = helixCurve(radius, phase);
+  const newGeo = new THREE.TubeGeometry(curve, 900, 0.024, 8, false);
+  mesh.geometry.dispose();
+  mesh.geometry = newGeo;
+}
+function rebuildAllScales(){
+  rebuildHelixTube(dHelixMesh, RADII.d, 0);
+  disposeTicksFrom(dTicksGroup);
+  addTicks(dTicksGroup, RADII.d, 1, COLORS.d, LABEL_COLORS.d);
+
+  rebuildHelixTube(cHelix, RADII.c, 0);
+  disposeTicksFrom(cHelixGroup, new Set([cHelix, slideHandle]));
+  addTicks(cHelixGroup, RADII.c, 1, COLORS.c, LABEL_COLORS.c);
+
+  rebuildHelixTube(aHelixMesh, RADII.a, PHASE_A);
+  disposeTicksFrom(aGroup, new Set([aHelixMesh]));
+  addTicks(aGroup, RADII.a, 2, COLORS.a, LABEL_COLORS.a, PHASE_A);
+
+  rebuildHelixTube(kHelixMesh, RADII.k, PHASE_K);
+  disposeTicksFrom(kGroup, new Set([kHelixMesh]));
+  addTicks(kGroup, RADII.k, 3, COLORS.k, LABEL_COLORS.k, PHASE_K);
+
+  rebuildHelixTube(llHelixMesh, RADII.ll, PHASE_LL);
+  disposeTicksFrom(llGroup, new Set([llHelixMesh]));
+  addCustomTicks(llGroup, RADII.ll, PHASE_LL, COLORS.ll, LABEL_COLORS.ll, LL_NICE_VALUES,
+    vv => log10(Math.log(vv)), vv => vv>=1000 ? Math.round(vv/1000)+"k" : String(vv));
+
+  rebuildHelixTube(sHelixMesh, RADII.s, PHASE_S);
+  disposeTicksFrom(sGroup, new Set([sHelixMesh]));
+  addCustomTicks(sGroup, RADII.s, PHASE_S, COLORS.s, LABEL_COLORS.s, S_NICE_VALUES,
+    d => log10(Math.sin(d*Math.PI/180))+1, d => d+"\u00b0");
+
+  rebuildHelixTube(tHelixMesh, RADII.t, PHASE_T);
+  disposeTicksFrom(tGroup, new Set([tHelixMesh]));
+  addCustomTicks(tGroup, RADII.t, PHASE_T, COLORS.t, LABEL_COLORS.t, T_NICE_VALUES,
+    d => log10(Math.tan(d*Math.PI/180))+1, d => d+"\u00b0");
+
+  rebuildHelixTube(lHelixMesh, RADII.l, PHASE_L);
+  disposeTicksFrom(lGroup, new Set([lHelixMesh]));
+  addCustomTicks(lGroup, RADII.l, PHASE_L, COLORS.l, LABEL_COLORS.l, L_NICE_VALUES,
+    v => v/10, v => String(v));
+
+  D_ARC_LENGTH = Math.sqrt(Math.pow(2*Math.PI*N_TURNS*RADII.d, 2) + HEIGHT*HEIGHT);
+  LENGTH_RATIO = D_ARC_LENGTH / HEIGHT;
+  disposeTicksFrom(dStraightTicksGroup);
+  buildDStraightTicks();
+  buildRatioLabel();
+
+  // refresh the free-play step's text if it's the one currently shown —
+  // body is a function precisely so this stays correct after a turns change
+  if (stepIndex === STEPS.length-1) renderStep();
+  // D's on-screen geometry (coiled or straight, whichever is currently
+  // showing) needs to reflect the new turn count / arc length too.
+  // REGRESSION, caught by an STL export triangle-count mismatch, not by
+  // eye: this used to call rebuildDGeometry(u) with its default low
+  // resolution (200 segments, meant for per-frame animation smoothness
+  // during the tween) to refresh D's RESTING state after a turns change —
+  // silently downgrading D from the 900-segment quality every other scale
+  // gets, every single time turns changed, with no visual sign obvious
+  // enough to notice by eye (a coiled tube at 200 vs 900 segments looks
+  // almost identical at this size) but a very real 4.5x triangle-count
+  // drop (14,400 to 3,200) confirmed directly on D's live geometry. Fixed
+  // by passing 900 explicitly for this settled-state call — only the
+  // active tween itself should use the cheaper 200-segment resolution.
+  rebuildDGeometry(isUnrolled ? 1 : 0, 900);
+}
+
+function tween(durationMs, onFrame, onDone){
+  const start = performance.now();
+  function frame(now){
+    const raw = Math.min(1, (now-start)/durationMs);
+    const eased = raw<0.5 ? 2*raw*raw : 1-Math.pow(-2*raw+2,2)/2;
+    onFrame(eased);
+    if (raw<1) requestAnimationFrame(frame); else if (onDone) onDone();
+  }
+  requestAnimationFrame(frame);
+}
+
+let isUnrolled = false;
+let unrollAnimating = false;
+let preUnrollVisibility = null;
+function setUnrolled(toStraight){
+  if (unrollAnimating || toStraight === isUnrolled) return;
+  unrollAnimating = true;
+  lastInteractionTime = Date.now();
+  dTicksGroup.visible = false;
+  dStraightTicksGroup.visible = false;
+  cursorGroup.visible = !toStraight;
+  const otherGroups = [cHelixGroup, aGroup, kGroup, llGroup, sGroup, tGroup, lGroup];
+  if (toStraight){
+    // Snapshot so coiling back restores exactly what the tutorial/free-play
+    // state had visible — not a blanket "show everything," which would
+    // wrongly reveal scales the tutorial hadn't gotten to yet.
+    preUnrollVisibility = otherGroups.map(g => g.visible);
+    otherGroups.forEach(g => g.visible = false);
+  } else if (preUnrollVisibility){
+    otherGroups.forEach((g,i) => g.visible = preUnrollVisibility[i]);
+  }
+  if (toStraight) comparisonGroup.visible = true; else comparisonGroup.visible = false;
+  document.getElementById("unrollBtn").textContent = toStraight ? "Coil it back up" : "Unroll to compare length";
+  const startU = isUnrolled ? 1 : 0, endU = toStraight ? 1 : 0;
+  const camStart = { theta:camTheta, phi:camPhi, dist:camDist, tx:target.x, ty:target.y, tz:target.z };
+  const camEnd = toStraight
+    ? { theta:camStart.theta+0.3, phi:1.3, dist:Math.max(10, 3+D_ARC_LENGTH*0.24), tx:HEIGHT*1.3, ty:0.3, tz:0 }
+    : { theta:0.6, phi:1.25, dist:12.5, tx:0, ty:HEIGHT/2, tz:0 };
+  tween(1100, eased=>{
+    rebuildDGeometry(startU + (endU-startU)*eased);
+    camTheta = camStart.theta + (camEnd.theta-camStart.theta)*eased;
+    camPhi = camStart.phi + (camEnd.phi-camStart.phi)*eased;
+    camDist = camStart.dist + (camEnd.dist-camStart.dist)*eased;
+    target.set(
+      camStart.tx + (camEnd.tx-camStart.tx)*eased,
+      camStart.ty + (camEnd.ty-camStart.ty)*eased,
+      camStart.tz + (camEnd.tz-camStart.tz)*eased
+    );
+    updateCamera();
+  }, ()=>{
+    isUnrolled = toStraight;
+    unrollAnimating = false;
+    // once settled, upgrade from the animation's cheap 200-segment geometry
+    // to the same 900-segment quality every other scale has — no reason to
+    // stay at reduced resolution once nothing is moving
+    rebuildDGeometry(toStraight ? 1 : 0, 900);
+    if (toStraight) dStraightTicksGroup.visible = true; else dTicksGroup.visible = true;
+  });
+}
+document.getElementById("unrollBtn").addEventListener("click", ()=> setUnrolled(!isUnrolled));
+
+const TURNS_MIN = 1, TURNS_MAX = 8;
+function setTurns(n){
+  n = Math.max(TURNS_MIN, Math.min(TURNS_MAX, n));
+  if (n === N_TURNS) return;
+  N_TURNS = n;
+  document.getElementById("turnsValue").textContent = String(N_TURNS);
+  rebuildAllScales();
+}
+document.getElementById("turnsMinus").addEventListener("click", ()=> setTurns(N_TURNS-1));
+document.getElementById("turnsPlus").addEventListener("click", ()=> setTurns(N_TURNS+1));
+
+/* ---------------- STL export: a real physical object, not just a screen demo ----------------
+   Walks each scale's actual tube geometry and serializes it as binary STL —
+   no external exporter library. THREE ships an STLExporter addon, but it's
+   not part of the core three.min.js bundle already loaded from cdnjs, and
+   adding it would mean a second CDN script this build doesn't otherwise
+   depend on — same reasoning as skipping true bloom for the point-light
+   glow instead. A hand-rolled binary serializer is maybe 25 lines for what
+   this needs (50 bytes/triangle: 12 floats + a 2-byte padding field, no
+   UVs/materials required for STL) and keeps the file self-contained.
+   Binary rather than ASCII — it's the format CAM/slicer software actually
+   expects, and roughly a quarter the size for the same geometry.
+   Export-specific geometry is rebuilt at reduced resolution (220 tubular ×
+   6 radial vs the on-screen 900×8) for the seven fixed scales, since the
+   on-screen smoothness is well past what a physical print or mill pass
+   needs and was producing a 20+MB file at full resolution. D is the one
+   exception — its geometry is exported exactly as currently posed
+   (dHelixMesh.geometry directly, whatever coiled/unrolled state it's in),
+   since preserving "what you're actually looking at" seemed more useful
+   than forcing it through the same rebuild the static scales get. */
+function buildExportTubeGeometry(radius, phase){
+  const curve = helixCurve(radius, phase);
+  return new THREE.TubeGeometry(curve, 220, 0.024, 6, false);
+}
+function collectTriangles(geometry, matrixWorld, out){
+  const pos = geometry.attributes.position, idx = geometry.index;
+  const readVert = i => new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(matrixWorld);
+  if (idx){
+    for (let i=0; i<idx.count; i+=3) out.push([readVert(idx.getX(i)), readVert(idx.getX(i+1)), readVert(idx.getX(i+2))]);
+  } else {
+    for (let i=0; i<pos.count; i+=3) out.push([readVert(i), readVert(i+1), readVert(i+2)]);
+  }
+}
+function trianglesToSTLBinary(triangles){
+  const buffer = new ArrayBuffer(84 + triangles.length*50);
+  const view = new DataView(buffer);
+  view.setUint32(80, triangles.length, true);
+  let offset = 84;
+  const nA = new THREE.Vector3(), nB = new THREE.Vector3();
+  triangles.forEach(([a,b,c])=>{
+    nA.subVectors(b, a); nB.subVectors(c, a);
+    const n = nA.cross(nB).normalize();
+    view.setFloat32(offset, n.x, true); view.setFloat32(offset+4, n.y, true); view.setFloat32(offset+8, n.z, true);
+    offset += 12;
+    [a,b,c].forEach(v=>{
+      view.setFloat32(offset, v.x, true); view.setFloat32(offset+4, v.y, true); view.setFloat32(offset+8, v.z, true);
+      offset += 12;
+    });
+    view.setUint16(offset, 0, true);
+    offset += 2;
+  });
+  return buffer;
+}
+document.getElementById("exportSTLBtn").addEventListener("click", ()=>{
+  const triangles = [];
+  dHelixMesh.updateMatrixWorld(true);
+  collectTriangles(dHelixMesh.geometry, dHelixMesh.matrixWorld, triangles);
+  // C exports at its actual current slide position (cHelixGroup's live
+  // transform already carries the slideOffset translation + cosmetic
+  // rotation from layout()), not reset to neutral — "export what you're
+  // looking at" applies here too, not just to D's coiled/unrolled state.
+  cHelixGroup.updateMatrixWorld(true);
+  const cGeo = buildExportTubeGeometry(RADII.c, 0);
+  collectTriangles(cGeo, cHelixGroup.matrixWorld, triangles);
+  cGeo.dispose();
+  const staticScales = [
+    [RADII.a, PHASE_A], [RADII.k, PHASE_K], [RADII.ll, PHASE_LL],
+    [RADII.s, PHASE_S], [RADII.t, PHASE_T], [RADII.l, PHASE_L]
+  ];
+  const identity = new THREE.Matrix4();
+  staticScales.forEach(([radius, phase])=>{
+    const geo = buildExportTubeGeometry(radius, phase);
+    collectTriangles(geo, identity, triangles);
+    geo.dispose();
+  });
+  axis.updateMatrixWorld(true);
+  collectTriangles(axis.geometry, axis.matrixWorld, triangles);
+  const buffer = trianglesToSTLBinary(triangles);
+  const blob = new Blob([buffer], { type: "model/stl" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "helix-lon.stl";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast(`Exported helix-lon.stl \u2014 ${triangles.length.toLocaleString()} triangles, ${(buffer.byteLength/1024/1024).toFixed(1)}MB`);
+});
+
+/* ---------------- persistence ---------------- */
+// The URL is a second, shareable place cursorT/slideOffset live — kept in
+// sync on every state-changing action (3D drag, mini-ruler drag, keyboard
+// nudge, Quick Calculate) via the same saveState() they all already call.
+function syncURL(){
+  try{
+    const params = new URLSearchParams();
+    params.set("t", cursorT.toFixed(4));
+    params.set("s", slideOffset.toFixed(4));
+    history.replaceState(null, "", "?" + params.toString());
+  }catch(e){}
+}
+function saveState(){
+  try{ localStorage.setItem("helixlon-state", JSON.stringify({ cursorT, slideOffset })); }catch(e){}
+  syncURL();
+}
+function loadState(){
+  try{
+    const url = new URLSearchParams(window.location.search);
+    if (url.has("t") && url.has("s")){
+      // an explicit shared link wins over whatever was left in localStorage
+      cursorT = parseFloat(url.get("t"));
+      slideOffset = parseFloat(url.get("s"));
+    } else {
+      const raw = localStorage.getItem("helixlon-state");
+      if (raw){ const s = JSON.parse(raw); cursorT = (s.cursorT !== undefined) ? s.cursorT : cursorT; slideOffset = (s.slideOffset !== undefined) ? s.slideOffset : slideOffset; }
+    }
+  }catch(e){}
+  const theme = localStorage.getItem("helixlon-theme");
+  applyTheme(theme || "dark");
+}
+["pointerup","pointercancel"].forEach(ev => renderer.domElement.addEventListener(ev, saveState));
+document.getElementById("copyLinkBtn").addEventListener("click", ()=>{
+  syncURL();
+  navigator.clipboard.writeText(window.location.href)
+    .then(()=>toast("Link copied — opens with this exact position"))
+    .catch(()=>toast(window.location.href));
+});
+
+/* ---------------- guided tutorial ---------------- */
+// Reveals one scale at a time so a first-time viewer isn't dropped into five
+// overlapping spirals with no idea which one to touch. Free-play mode (the
+// last step) is the tool as it always worked — this only gates what's visible
+// and draggable before that point.
+const STEPS = [
+  { show:{d:true}, cursor:true, slide:false,
+    title:"Meet D",
+    body:"This spiral is the D scale — the numbers 1 to 10, wrapped around a cylinder instead of a straight ruler. Going around more than once buys far more room per number than a straight line gives you in the same height.",
+    tip:"Try it: drag the white ring up and down. D's number below updates as you move it." },
+  { show:{d:true,c:true}, cursor:true, slide:true,
+    title:"Meet C",
+    body:"Here's C — the same scale, but it can also slide up and down the shared axis, independently of D.",
+    tip:"Try it: drag the red spiral itself (not the ring). C's number changes but D's doesn't — sliding C moves it relative to D." },
+  { show:{d:true,c:true}, cursor:true, slide:true,
+    title:"Multiply with it",
+    body:"Slide C until its own \u201c1\u201d lines up with D's \u201c2.\u201d Then move the cursor up to C's \u201c3.\u201d Read D underneath — that's 2 \u00d7 3.",
+    tip:"Try it yourself, or tap \u201cShow me.\u201d",
+    demo:()=>{ slideOffset = log10(2); cursorT = log10(2)+log10(3); } },
+  { show:{d:true,c:true,a:true}, cursor:true, slide:true,
+    title:"Squares, for free",
+    body:"This green spiral is A. It's fixed like D, but squeezed to fit two decades (1 to 100) into the same height — so at any cursor position, A always reads the square of whatever D reads there.",
+    tip:"Move the cursor to D = 5 and check that A reads 25." },
+  { show:{d:true,c:true,a:true,k:true}, cursor:true, slide:true,
+    title:"And cubes",
+    body:"Same idea, amber this time — K squeezes three decades (1 to 1000) into the same height, so it reads the cube of D.",
+    tip:"Move the cursor to D = 5 and check K reads 125." },
+  { show:{d:true,c:true,a:true,k:true,ll:true}, cursor:true, slide:true,
+    title:"One more: powers of e",
+    body:"The purple spiral bends the log rule twice over — it reads e raised to the power of D. It's the same math a real slide rule's \u201cLL\u201d scales use for arbitrary exponents.",
+    tip:"Move the cursor to D = 2 and check LL reads about 7.39 (e\u00b2)." },
+  { show:{d:true,c:true,a:true,k:true,ll:true,s:true,t:true,l:true}, cursor:true, slide:true, free:true,
+    title:"That's the whole instrument",
+    // a function, not a static string — LENGTH_RATIO can change live now (Turns
+    // stepper), so this needs to read the current value at render time, not
+    // whatever it happened to be when STEPS was first built
+    body:()=>`Cyan (S) and pink (T) are sine and tangent, reading 10\u00d7sin or 10\u00d7tan against D. Gray (L) is linear \u2014 it reads 10\u00d7log\u2081\u2080 of D directly. Drag empty space to orbit the camera, scroll to zoom out for more room. Use Quick Calculate below for a shortcut on any of these. (D's spiral is ${LENGTH_RATIO.toFixed(1)}\u00d7 the length of a straight scale in the same vertical space at ${N_TURNS} turns \u2014 press "Unroll" above to see it, not just take the number's word for it.)` }
+];
+let stepIndex = 0;
+
+function renderStep(){
+  const step = STEPS[stepIndex];
+  dGroup.visible = !!step.show.d;
+  cHelixGroup.visible = !!step.show.c;
+  aGroup.visible = !!step.show.a;
+  kGroup.visible = !!step.show.k;
+  llGroup.visible = !!step.show.ll;
+  sGroup.visible = !!step.show.s;
+  tGroup.visible = !!step.show.t;
+  lGroup.visible = !!step.show.l;
+  revealed.cursor = !!step.cursor;
+  revealed.slide = !!step.slide;
+  revealed.d = !!step.show.d;
+  revealed.c = !!step.show.c;
+  revealed.a = !!step.show.a;
+  revealed.k = !!step.show.k;
+  revealed.ll = !!step.show.ll;
+  revealed.s = !!step.show.s;
+  revealed.t = !!step.show.t;
+  revealed.l = !!step.show.l;
+
+  const bodyText = typeof step.body === "function" ? step.body() : step.body;
+  document.getElementById("stepBody").textContent = bodyText + (step.tip ? "  " + step.tip : "");
+  document.getElementById("stepCount").textContent = `Step ${stepIndex+1} of ${STEPS.length}`;
+  document.getElementById("stepPrev").style.visibility = stepIndex === 0 ? "hidden" : "visible";
+  document.getElementById("stepDemo").style.display = step.demo ? "inline-block" : "none";
+  document.getElementById("stepNext").textContent = stepIndex === STEPS.length-1 ? "Done" : "Next";
+
+  ["d","c","a","k","ll","s","t","l"].forEach(key=>{
+    const cell = document.querySelector(`#readout .cell[data-key="${key}"]`);
+    cell.classList.toggle("hidden", !step.show[key]);
+  });
+
+  const tutorialMode = !step.free;
+  document.getElementById("tutorialNav").style.display = tutorialMode ? "flex" : "none";
+  document.getElementById("calc").style.display = tutorialMode ? "none" : "flex";
+  document.getElementById("unrollBtn").style.display = tutorialMode ? "none" : "inline-block";
+  document.getElementById("turnsControl").style.display = tutorialMode ? "none" : "flex";
+  document.getElementById("exportSTLBtn").style.display = tutorialMode ? "none" : "inline-block";
+  if (step.free){
+    document.getElementById("replayBtn").style.display = "inline-block";
+    try{ localStorage.setItem("helixlon-tutorial-done", "1"); }catch(e){}
+  }
+  layout();
+}
+
+document.getElementById("stepNext").addEventListener("click", ()=>{
+  if (stepIndex < STEPS.length-1) stepIndex++;
+  renderStep();
+});
+document.getElementById("stepPrev").addEventListener("click", ()=>{
+  if (stepIndex > 0) stepIndex--;
+  renderStep();
+});
+document.getElementById("stepSkip").addEventListener("click", ()=>{
+  stepIndex = STEPS.length-1;
+  renderStep();
+});
+document.getElementById("stepDemo").addEventListener("click", ()=>{
+  const step = STEPS[stepIndex];
+  if (step.demo){ step.demo(); layout(); saveState(); }
+});
+document.getElementById("replayBtn").addEventListener("click", ()=>{
+  stepIndex = 0;
+  document.getElementById("replayBtn").style.display = "none";
+  renderStep();
+});
+
+loadState();
+try{
+  // A shared link's whole point is showing a specific configured state — it
+  // shouldn't be gated behind a tutorial the recipient hasn't started yet.
+  const hasSharedState = new URLSearchParams(window.location.search).has("t");
+  if (hasSharedState || localStorage.getItem("helixlon-tutorial-done") === "1") stepIndex = STEPS.length-1;
+}catch(e){}
+renderStep();
+document.getElementById("footVersion").innerHTML = `HELIX-LON &middot; v${APP_VERSION} &middot; Joe.K &middot; <a href="https://axisbim.io" style="color:inherit;">axisbim.io</a>`;
+
+// idle auto-rotate: after a few seconds with no input, drift the camera
+// slowly around so the instrument reads as something worth looking at even
+// when nobody's actively driving it — a showcase state, not a control.
+// Any real interaction (either drag surface, wheel zoom, or a key nudge)
+// resets the idle clock; see the four touch points below.
+let lastInteractionTime = Date.now();
+const IDLE_DELAY_MS = 4000;
+const IDLE_ROTATE_SPEED = 0.00015;
+// Matches the CSS block-screen threshold (max-width: 759px) — below it the
+// canvas is hidden behind the "requires a tablet or desktop" message, so
+// there's no reason to keep running the idle-rotate math or issuing WebGL
+// draw calls against something nobody can see. Still calls
+// requestAnimationFrame every frame regardless, so it resumes instantly the
+// moment the viewport crosses back above the threshold, no reload needed.
+const BLOCK_WIDTH_PX = 759;
+function animate(){
+  requestAnimationFrame(animate);
+  if (window.innerWidth <= BLOCK_WIDTH_PX) return;
+  if (!dragMode && !miniDragMode && Date.now()-lastInteractionTime > IDLE_DELAY_MS){
+    camTheta += IDLE_ROTATE_SPEED;
+    updateCamera();
+  }
+  renderer.render(scene, camera);
+}
+animate();
+})();
+</script>
+</body>
+</html>
