@@ -56,4 +56,5 @@ See `CHANGELOG.md` for the phase-offset, tick-density, mantissa, and
 interaction lessons learned building this — worth a read before adding a
 ninth scale or new interaction surface.
 
+---
 Joe.K · [axisbim.io](https://axisbim.io)
